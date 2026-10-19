@@ -126,18 +126,30 @@ npm run dev
 
 ---
 
-## 🧪 Testing
+### 1. Automated Test Suite (35 Tests)
+ForgeLocal comes with a comprehensive test suite covering sandboxing, path traversal protection, symlink escapes, secret redaction, command allowlists, timeout handling, approval lifecycles, API endpoints, and Ollama edge cases:
+- Request validation (empty/whitespace content rejection)
+- Offline Ollama daemon handling (HTTP 503 with user instructions)
+- Missing model detection (HTTP 404 with manual `ollama pull` guidance)
+- Malformed upstream responses (HTTP 500, non-JSON, empty payloads -> HTTP 502)
+- Upstream timeout handling (HTTP 504)
+- Server-Sent Events (SSE) streaming and client cancellation
+- SQLite message persistence
 
-### 1. Backend Test Suite
-ForgeLocal comes with a comprehensive test suite covering sandboxing, path traversal protection, symlink escapes, secret redaction, command allowlists, timeout handling, approval lifecycles, and API endpoints.
-
-To run tests:
+To run all automated tests:
 ```bash
 source backend/.venv/bin/activate
-PYTHONPATH=backend pytest backend/tests -v
+pytest backend/tests -v
 ```
 
-### 2. Frontend Build Verification
+### 2. Live Local Model Integration Test
+To verify the complete chain against the real local Ollama daemon and `qwen2.5-coder:7b` without mocks:
+```bash
+backend/.venv/bin/python backend/tests/test_live_ollama.py
+```
+This tests real inference, live SSE streaming tokens, and database persistence against your running Ollama server.
+
+### 3. Frontend Build Verification
 To ensure all TypeScript types check out and Monaco Editor bundles offline:
 ```bash
 cd frontend

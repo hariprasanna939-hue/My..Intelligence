@@ -88,6 +88,10 @@ export interface CommandResult {
 export interface AppSettings {
   ollama_base_url: string;
   default_model: string;
+  temperature?: number;
+  num_ctx?: number;
+  num_predict?: number;
+  request_timeout_seconds?: number;
   allowed_commands: string[];
   command_timeout_seconds: number;
   max_file_size_bytes: number;

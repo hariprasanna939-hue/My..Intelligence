@@ -144,9 +144,12 @@ class ChatMessage(BaseModel):
 
 
 class ChatMessageRequest(BaseModel):
-    content: str
+    content: str = Field(..., min_length=1, description="User prompt content")
     session_id: Optional[str] = None
     model: Optional[str] = None
+    temperature: Optional[float] = Field(None, ge=0.0, le=2.0)
+    num_ctx: Optional[int] = Field(None, ge=1024, le=32768)
+    num_predict: Optional[int] = Field(None, ge=128, le=16384)
     mode: Optional[Literal["chat", "explain", "refactor", "test", "fix"]] = "chat"
     current_file_path: Optional[str] = None
     selected_code: Optional[str] = None
@@ -158,6 +161,10 @@ class ChatMessageRequest(BaseModel):
 class AppSettings(BaseModel):
     ollama_base_url: str
     default_model: str
+    temperature: float = 0.2
+    num_ctx: int = 8192
+    num_predict: int = 2048
+    request_timeout_seconds: float = 120.0
     allowed_commands: List[str]
     command_timeout_seconds: int
     max_file_size_bytes: int
@@ -167,6 +174,10 @@ class AppSettings(BaseModel):
 class AppSettingsUpdate(BaseModel):
     ollama_base_url: Optional[str] = None
     default_model: Optional[str] = None
+    temperature: Optional[float] = None
+    num_ctx: Optional[int] = None
+    num_predict: Optional[int] = None
+    request_timeout_seconds: Optional[float] = None
     allowed_commands: Optional[List[str]] = None
     command_timeout_seconds: Optional[int] = None
     max_file_size_bytes: Optional[int] = None

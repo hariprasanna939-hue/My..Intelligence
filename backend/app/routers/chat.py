@@ -2,9 +2,10 @@
 
 from datetime import datetime, timezone
 import json
+import logging
 from typing import AsyncGenerator, List, Optional
 import uuid
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 
 from app.config import settings
@@ -18,6 +19,7 @@ from app.schemas import (
 from app.services.agent import build_system_prompt, process_model_actions
 from app.services.ollama_client import ollama_client
 
+logger = logging.getLogger("forgelocal.chat")
 router = APIRouter(prefix="/api/chat", tags=["chat"])
 
 
@@ -148,7 +150,10 @@ async def _save_message(
 
 @router.post("/send")
 async def send_message_non_streaming(req: ChatMessageRequest):
-    """Non-streaming message endpoint for testing and single-turn completions."""
+    """Non-streaming message endpoint with validation, SQLite persistence, and Ollama integration."""
+    if not req.content or not req.content.strip():
+        raise HTTPException(status_code=400, detail="Message content cannot be empty.")
+
     workspace = await get_setting("active_workspace", settings.ACTIVE_WORKSPACE)
     session_id = req.session_id
 
@@ -161,7 +166,7 @@ async def send_message_non_streaming(req: ChatMessageRequest):
         session_id = sess.id
 
     # Persist user message
-    await _save_message(session_id, "user", req.content)
+    await _save_message(session_id, "user", req.content.strip())
 
     # Fetch prior history
     history = await get_session_messages(session_id)
@@ -179,9 +184,20 @@ async def send_message_non_streaming(req: ChatMessageRequest):
         if m.role in ("user", "assistant"):
             ollama_messages.append({"role": m.role, "content": m.content})
 
-    # Call Ollama
+    # Read generation settings
     model = req.model or await get_setting("default_model", settings.DEFAULT_MODEL)
-    result = await ollama_client.chat_complete(ollama_messages, model=model)
+    temp = req.temperature if req.temperature is not None else float(await get_setting("temperature", str(settings.DEFAULT_TEMPERATURE)))
+    ctx = req.num_ctx if req.num_ctx is not None else int(await get_setting("num_ctx", str(settings.DEFAULT_NUM_CTX)))
+    predict = req.num_predict if req.num_predict is not None else int(await get_setting("num_predict", str(settings.DEFAULT_NUM_PREDICT)))
+
+    # Call Ollama
+    result = await ollama_client.chat_complete(
+        ollama_messages,
+        model=model,
+        temperature=temp,
+        num_ctx=ctx,
+        num_predict=predict,
+    )
     assistant_content = result.get("message", {}).get("content", "")
 
     # Check for proposed actions (creates approvals in DB)
@@ -202,8 +218,11 @@ async def send_message_non_streaming(req: ChatMessageRequest):
 
 
 @router.post("/stream")
-async def stream_chat_message(req: ChatMessageRequest):
-    """Server-Sent Events (SSE) streaming chat endpoint with real-time token delivery."""
+async def stream_chat_message(req: ChatMessageRequest, request: Request):
+    """Server-Sent Events (SSE) streaming chat endpoint with cancellation support and real-time token delivery."""
+    if not req.content or not req.content.strip():
+        raise HTTPException(status_code=400, detail="Message content cannot be empty.")
+
     workspace = await get_setting("active_workspace", settings.ACTIVE_WORKSPACE)
     session_id = req.session_id
 
@@ -215,7 +234,7 @@ async def stream_chat_message(req: ChatMessageRequest):
         session_id = sess.id
 
     # Save user message
-    await _save_message(session_id, "user", req.content)
+    await _save_message(session_id, "user", req.content.strip())
 
     # Fetch prior history
     history = await get_session_messages(session_id)
@@ -233,6 +252,9 @@ async def stream_chat_message(req: ChatMessageRequest):
             ollama_messages.append({"role": m.role, "content": m.content})
 
     model = req.model or await get_setting("default_model", settings.DEFAULT_MODEL)
+    temp = req.temperature if req.temperature is not None else float(await get_setting("temperature", str(settings.DEFAULT_TEMPERATURE)))
+    ctx = req.num_ctx if req.num_ctx is not None else int(await get_setting("num_ctx", str(settings.DEFAULT_NUM_CTX)))
+    predict = req.num_predict if req.num_predict is not None else int(await get_setting("num_predict", str(settings.DEFAULT_NUM_PREDICT)))
 
     async def event_generator() -> AsyncGenerator[str, None]:
         # Send initial event with session_id
@@ -240,7 +262,18 @@ async def stream_chat_message(req: ChatMessageRequest):
 
         full_content_acc = []
         try:
-            async for raw_line in ollama_client.chat_stream(ollama_messages, model=model):
+            async for raw_line in ollama_client.chat_stream(
+                ollama_messages,
+                model=model,
+                temperature=temp,
+                num_ctx=ctx,
+                num_predict=predict,
+            ):
+                # Check for client cancellation
+                if await request.is_disconnected():
+                    logger.info("Client disconnected. Cancelling streaming generation.")
+                    break
+
                 try:
                     data = json.loads(raw_line)
                     chunk = data.get("message", {}).get("content", "")
@@ -259,16 +292,20 @@ async def stream_chat_message(req: ChatMessageRequest):
             if created_approvals:
                 yield f"event: approvals\ndata: {json.dumps({'approvals': created_approvals})}\n\n"
 
-            # Save completed assistant message
-            saved_msg = await _save_message(
-                session_id=session_id,
-                role="assistant",
-                content=full_text,
-                tool_calls=created_approvals if created_approvals else None,
-            )
+            # Save completed assistant message (even if partially generated before stop)
+            if full_text:
+                saved_msg = await _save_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=full_text,
+                    tool_calls=created_approvals if created_approvals else None,
+                )
+                yield f"event: done\ndata: {json.dumps({'message_id': saved_msg.id, 'session_id': session_id})}\n\n"
+            else:
+                yield f"event: done\ndata: {json.dumps({'session_id': session_id})}\n\n"
 
-            yield f"event: done\ndata: {json.dumps({'message_id': saved_msg.id, 'session_id': session_id})}\n\n"
-
+        except HTTPException as he:
+            yield f"event: error\ndata: {json.dumps({'error': he.detail})}\n\n"
         except Exception as e:
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 

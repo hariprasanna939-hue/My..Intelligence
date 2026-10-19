@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     DEFAULT_MODEL: str = "qwen2.5-coder:7b"
     REQUEST_TIMEOUT_SECONDS: float = 120.0
 
+    # Model Generation settings optimized for 16 GB Apple Silicon Mac
+    DEFAULT_TEMPERATURE: float = 0.2
+    DEFAULT_NUM_CTX: int = 8192
+    DEFAULT_NUM_PREDICT: int = 2048
+    DEFAULT_TOP_P: float = 0.9
+
     # Storage paths
     DATA_DIR: Path = Path(__file__).resolve().parent.parent / "data"
     DB_FILENAME: str = "forgelocal.db"
