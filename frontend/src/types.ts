@@ -21,6 +21,8 @@ export interface FileNode {
   path: string;
   is_dir: boolean;
   size?: number | null;
+  language?: string | null;
+  formatted_size?: string | null;
   children?: FileNode[] | null;
 }
 
@@ -30,6 +32,35 @@ export interface FileReadResponse {
   content: string;
   size: number;
   is_binary: boolean;
+  language?: string;
+  formatted_size?: string;
+  total_lines?: number;
+  start_line?: number;
+  end_line?: number;
+}
+
+export interface DirectoryEntry {
+  name: string;
+  path: string;
+  is_accessible: boolean;
+}
+
+export interface BrowseDirectoryResponse {
+  current_path: string;
+  parent_path?: string | null;
+  directories: DirectoryEntry[];
+  is_valid_workspace: boolean;
+}
+
+export interface ProjectSummaryResponse {
+  workspace_name: string;
+  workspace_path: string;
+  total_files_scanned: number;
+  languages: [string, number][];
+  top_level_directories: string[];
+  detected_manifests: string[];
+  test_runner?: string | null;
+  manifest_details: Record<string, any>;
 }
 
 export interface OpenFileTab {

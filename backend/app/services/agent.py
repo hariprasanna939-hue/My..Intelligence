@@ -12,20 +12,25 @@ from typing import Any, AsyncGenerator, Dict, List, Optional
 from app.config import settings
 from app.services.approvals import create_approval
 from app.services.ollama_client import ollama_client
+from app.services.project_understanding import gather_project_context
 from app.services.workspace import read_file_safely
 
 
 SYSTEM_PROMPT_TEMPLATE = """You are ForgeLocal, a trustworthy local AI coding agent running entirely on the user's computer.
 Your job is to help the user understand, navigate, write, edit, debug, and test code in their local workspace.
 
-CRITICAL SAFETY & OFFLINE RULES:
-1. You run 100% locally. Never assume access to external internet services.
-2. You CANNOT directly execute commands or write files silently. All destructive changes (file writes, patches, deletions, command executions) must be proposed for user review.
-3. Keep answers clear, modular, and well-commented.
-4. When writing code, provide complete, working code rather than placeholders.
+CRITICAL GROUNDING & ACCURACY RULES:
+1. Base your explanation, diagnosis, architecture analysis, and code proposals STRICTLY on the actual files and evidence in the workspace context below.
+2. DO NOT invent, fabricate, or hallucinate filenames, functions, classes, imports, endpoints, or modules that do not exist.
+3. If necessary context cannot be found in the project files, explicitly state what files or patterns were checked and what information is missing.
+4. You CANNOT directly execute commands or write files silently. All destructive changes (file writes, patches, deletions, command executions) must be proposed using the structured action block for user review.
+5. Provide complete, working, idiomatic code rather than incomplete placeholders.
 
 WORKSPACE CONTEXT:
 Active Workspace: {workspace_path}
+
+{project_context}
+
 {open_file_context}
 
 ACTION CAPABILITIES:
@@ -60,10 +65,22 @@ def build_system_prompt(
     current_file_path: Optional[str] = None,
     selected_code: Optional[str] = None,
     mode: str = "chat",
+    user_prompt: Optional[str] = None,
 ) -> str:
-    """Constructs the system prompt with active workspace context and open file context."""
+    """Constructs the system prompt with gathered project context and focused file context."""
     workspace_str = workspace_path if workspace_path else "No workspace currently active."
     
+    project_context = ""
+    if workspace_path and user_prompt:
+        try:
+            project_context = gather_project_context(
+                workspace_root=workspace_path,
+                user_prompt=user_prompt,
+                current_file_path=current_file_path,
+            )
+        except Exception:
+            project_context = ""
+
     file_context_parts = []
     if current_file_path and workspace_path:
         file_context_parts.append(f"Currently focused file: {current_file_path}")
@@ -79,19 +96,20 @@ def build_system_prompt(
 
     mode_instructions = ""
     if mode == "explain":
-        mode_instructions = "\nTASK FOCUS: Carefully explain the code architecture, logic flow, and edge cases."
+        mode_instructions = "\nTASK FOCUS: Carefully explain the code architecture, logic flow, and edge cases based on the actual files."
     elif mode == "refactor":
         mode_instructions = "\nTASK FOCUS: Suggest clean, idiomatic refactoring improvements and propose the updated file."
     elif mode == "test":
         mode_instructions = "\nTASK FOCUS: Generate comprehensive unit tests covering standard cases, edge cases, and failure modes."
     elif mode == "fix":
-        mode_instructions = "\nTASK FOCUS: Diagnose the bug/error, explain the root cause, and propose a clean patch or fix."
+        mode_instructions = "\nTASK FOCUS: Diagnose the bug/error using the real project evidence, explain the root cause, and propose a clean patch or fix."
 
     open_file_context = "\n".join(file_context_parts)
     allowed_cmds_str = ", ".join(settings.ALLOWED_COMMANDS)
 
     base = SYSTEM_PROMPT_TEMPLATE.format(
         workspace_path=workspace_str,
+        project_context=project_context,
         open_file_context=open_file_context,
         allowed_commands=allowed_cmds_str,
     )

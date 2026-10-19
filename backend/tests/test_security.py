@@ -65,6 +65,22 @@ def test_resolve_safe_path_blocks_path_traversal(tmp_path: Path):
     assert "Path traversal outside workspace boundary" in exc.value.detail
 
 
+def test_resolve_safe_path_blocks_symlink_escape(tmp_path: Path):
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    outside_file = tmp_path / "outside_secret.txt"
+    outside_file.write_text("classified data")
+
+    # Create symlink pointing outside workspace
+    escaped_symlink = workspace / "escaped_link"
+    escaped_symlink.symlink_to(outside_file)
+
+    with pytest.raises(HTTPException) as exc:
+        resolve_safe_path(workspace, "escaped_link")
+    assert exc.value.status_code == 403
+    assert "Path traversal outside workspace boundary" in exc.value.detail
+
+
 def test_resolve_safe_path_blocks_sensitive_files(tmp_path: Path):
     workspace = tmp_path / "workspace"
     workspace.mkdir()

@@ -1,7 +1,7 @@
 """Pydantic schemas for ForgeLocal API requests and responses."""
 
 from datetime import datetime
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Literal, Optional, Tuple
 from pydantic import BaseModel, Field
 
 
@@ -38,6 +38,8 @@ class FileNode(BaseModel):
     path: str
     is_dir: bool
     size: Optional[int] = None
+    language: Optional[str] = None
+    formatted_size: Optional[str] = None
     children: Optional[List["FileNode"]] = None
 
 
@@ -47,10 +49,40 @@ class FileReadResponse(BaseModel):
     content: str
     size: int
     is_binary: bool = False
+    language: Optional[str] = "plaintext"
+    formatted_size: Optional[str] = None
+    total_lines: Optional[int] = None
+    start_line: Optional[int] = 1
+    end_line: Optional[int] = None
+
+
+class DirectoryEntry(BaseModel):
+    name: str
+    path: str
+    is_accessible: bool = True
+
+
+class BrowseDirectoryResponse(BaseModel):
+    current_path: str
+    parent_path: Optional[str] = None
+    directories: List[DirectoryEntry] = Field(default_factory=list)
+    is_valid_workspace: bool = True
+
+
+class ProjectSummaryResponse(BaseModel):
+    workspace_name: str
+    workspace_path: str
+    total_files_scanned: int
+    languages: List[Tuple[str, int]]
+    top_level_directories: List[str]
+    detected_manifests: List[str]
+    test_runner: Optional[str] = None
+    manifest_details: Dict[str, Any] = Field(default_factory=dict)
 
 
 class FileSearchRequest(BaseModel):
     query: str
+    file_extensions: Optional[List[str]] = None
     max_results: int = 50
 
 

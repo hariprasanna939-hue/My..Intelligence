@@ -126,15 +126,11 @@ npm run dev
 
 ---
 
-### 1. Automated Test Suite (35 Tests)
-ForgeLocal comes with a comprehensive test suite covering sandboxing, path traversal protection, symlink escapes, secret redaction, command allowlists, timeout handling, approval lifecycles, API endpoints, and Ollama edge cases:
-- Request validation (empty/whitespace content rejection)
-- Offline Ollama daemon handling (HTTP 503 with user instructions)
-- Missing model detection (HTTP 404 with manual `ollama pull` guidance)
-- Malformed upstream responses (HTTP 500, non-JSON, empty payloads -> HTTP 502)
-- Upstream timeout handling (HTTP 504)
-- Server-Sent Events (SSE) streaming and client cancellation
-- SQLite message persistence
+### 1. Automated Test Suite (47 Tests)
+ForgeLocal comes with a comprehensive test suite covering sandboxing, path traversal protection, symlink escapes, secret redaction, command allowlists, timeout handling, approval lifecycles, API endpoints, Ollama edge cases, and safe project understanding:
+- **Project Understanding & Code Search**: Workspace cataloging, filename pattern search, content search with line numbers, manifest inspection (`package.json`, `pyproject.toml`, `README`), concise project summaries, and automated agent context gathering.
+- **Security & Sandboxing**: Directory traversal protection (`../`), symlink escapes outside workspace root, missing file 404s, large file size limits, binary preview rejection, and credential scrubbing in source previews.
+- **Ollama AI Integration**: Request validation, offline Ollama daemon handling (HTTP 503 with user instructions), missing model detection (HTTP 404 with manual `ollama pull` guidance), malformed upstream responses (HTTP 502), timeouts (HTTP 504), SSE streaming, and SQLite message persistence.
 
 To run all automated tests:
 ```bash

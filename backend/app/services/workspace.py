@@ -45,15 +45,22 @@ def build_directory_tree(
     max_depth: int = 6
 ) -> FileNode:
     """Recursively builds a tree of files and directories within workspace."""
+    from app.services.project_understanding import detect_language, format_file_size
+
     rel_path = str(current_path.relative_to(workspace_root))
     if rel_path == ".":
         rel_path = ""
+
+    is_file = current_path.is_file()
+    size = current_path.stat().st_size if is_file else None
 
     node = FileNode(
         name=current_path.name if current_path != workspace_root else workspace_root.name,
         path=rel_path,
         is_dir=current_path.is_dir(),
-        size=current_path.stat().st_size if current_path.is_file() else None,
+        size=size,
+        language=detect_language(current_path) if is_file else None,
+        formatted_size=format_file_size(size) if size is not None else None,
         children=None,
     )
 
@@ -79,49 +86,28 @@ def build_directory_tree(
     return node
 
 
-def read_file_safely(workspace_root: str, relative_path: str) -> FileReadResponse:
-    """Reads a file within the workspace safely."""
-    target_path = resolve_safe_path(workspace_root, relative_path)
-    
-    if not target_path.exists():
-        raise HTTPException(status_code=404, detail=f"File not found: {relative_path}")
-    if not target_path.is_file():
-        raise HTTPException(status_code=400, detail=f"Path is not a regular file: {relative_path}")
+def read_file_safely(
+    workspace_root: str,
+    relative_path: str,
+    start_line: Optional[int] = None,
+    end_line: Optional[int] = None,
+) -> FileReadResponse:
+    """Reads a file within the workspace safely, with secret scrubbing and optional line ranges."""
+    from app.services.project_understanding import read_file_range
 
-    size = target_path.stat().st_size
-    if size > settings.MAX_FILE_SIZE_BYTES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"File exceeds max readable size ({size} bytes > {settings.MAX_FILE_SIZE_BYTES} bytes)"
-        )
-
-    # Check for binary extension
-    if target_path.suffix.lower() in BINARY_EXTENSIONS:
-        return FileReadResponse(
-            path=str(target_path),
-            relative_path=relative_path,
-            content="[Binary file preview not supported]",
-            size=size,
-            is_binary=True,
-        )
-
-    try:
-        content = target_path.read_text(encoding="utf-8")
-        return FileReadResponse(
-            path=str(target_path),
-            relative_path=relative_path,
-            content=content,
-            size=size,
-            is_binary=False,
-        )
-    except UnicodeDecodeError:
-        return FileReadResponse(
-            path=str(target_path),
-            relative_path=relative_path,
-            content="[Binary or non-UTF-8 content]",
-            size=size,
-            is_binary=True,
-        )
+    data = read_file_range(workspace_root, relative_path, start_line=start_line, end_line=end_line)
+    return FileReadResponse(
+        path=data["path"],
+        relative_path=data["relative_path"],
+        content=data["content"],
+        size=data["size"],
+        is_binary=data["is_binary"],
+        language=data.get("language", "plaintext"),
+        formatted_size=data.get("formatted_size"),
+        total_lines=data.get("total_lines"),
+        start_line=data.get("start_line", 1),
+        end_line=data.get("end_line"),
+    )
 
 
 def write_file_safely(workspace_root: str, relative_path: str, content: str) -> None:

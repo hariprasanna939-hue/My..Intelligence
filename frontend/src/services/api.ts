@@ -1,12 +1,14 @@
 import {
   AppSettings,
   ApprovalItem,
+  BrowseDirectoryResponse,
   ChatMessage,
   ChatSession,
   CommandResult,
   FileNode,
   FileReadResponse,
   HealthResponse,
+  ProjectSummaryResponse,
 } from '../types';
 
 const API_BASE = '/api';
@@ -54,8 +56,42 @@ export const api = {
     return res.json();
   },
 
-  async readFile(path: string): Promise<FileReadResponse> {
-    const res = await fetch(`${API_BASE}/workspace/file?path=${encodeURIComponent(path)}`);
+  async browseDirectory(path?: string): Promise<BrowseDirectoryResponse> {
+    const url = path ? `${API_BASE}/workspace/browse?path=${encodeURIComponent(path)}` : `${API_BASE}/workspace/browse`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Failed to browse folder');
+    }
+    return res.json();
+  },
+
+  async getProjectSummary(): Promise<ProjectSummaryResponse> {
+    const res = await fetch(`${API_BASE}/workspace/summary`);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Failed to load project summary');
+    }
+    return res.json();
+  },
+
+  async getProjectManifests(): Promise<Record<string, any>> {
+    const res = await fetch(`${API_BASE}/workspace/manifests`);
+    if (!res.ok) throw new Error('Failed to load manifests');
+    return res.json();
+  },
+
+  async searchWorkspaceFilenames(pattern: string): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/workspace/search-filenames?pattern=${encodeURIComponent(pattern)}`);
+    if (!res.ok) throw new Error('Failed to search filenames');
+    return res.json();
+  },
+
+  async readFile(path: string, startLine?: number, endLine?: number): Promise<FileReadResponse> {
+    let url = `${API_BASE}/workspace/file?path=${encodeURIComponent(path)}`;
+    if (startLine !== undefined) url += `&start_line=${startLine}`;
+    if (endLine !== undefined) url += `&end_line=${endLine}`;
+    const res = await fetch(url);
     if (!res.ok) {
       const err = await res.json().catch(() => ({ detail: res.statusText }));
       throw new Error(err.detail || 'Failed to read file');

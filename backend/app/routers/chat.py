@@ -171,12 +171,13 @@ async def send_message_non_streaming(req: ChatMessageRequest):
     # Fetch prior history
     history = await get_session_messages(session_id)
     
-    # Build prompt messages for Ollama
+    # Build prompt messages for Ollama with automated project context gathering
     system_prompt = build_system_prompt(
         workspace_path=workspace,
         current_file_path=req.current_file_path,
         selected_code=req.selected_code,
         mode=req.mode or "chat",
+        user_prompt=req.content.strip(),
     )
 
     ollama_messages = [{"role": "system", "content": system_prompt}]
@@ -244,6 +245,7 @@ async def stream_chat_message(req: ChatMessageRequest, request: Request):
         current_file_path=req.current_file_path,
         selected_code=req.selected_code,
         mode=req.mode or "chat",
+        user_prompt=req.content.strip(),
     )
 
     ollama_messages = [{"role": "system", "content": system_prompt}]

@@ -197,6 +197,28 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
               </div>
             </div>
 
+            {/* File Filter / Search */}
+            <div className="p-2 border-b border-navy-800">
+              <div className="relative">
+                <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-2.5" />
+                <input
+                  type="text"
+                  value={fileSearch}
+                  onChange={(e) => setFileSearch(e.target.value)}
+                  placeholder="Search files..."
+                  className="w-full bg-navy-950 border border-navy-800 focus:border-blue-500/80 rounded pl-7 pr-6 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none font-mono"
+                />
+                {fileSearch && (
+                  <button
+                    onClick={() => setFileSearch('')}
+                    className="absolute right-2 top-2 text-slate-500 hover:text-slate-300"
+                  >
+                    <X className="w-3 h-3" />
+                  </button>
+                )}
+              </div>
+            </div>
+
             {/* Inline New File input */}
             {showNewFileInput && (
               <form onSubmit={handleCreateSubmit} className="p-2 border-b border-navy-800">
@@ -217,6 +239,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                 <FileTree
                   node={tree}
                   activeFilePath={activeTabPath}
+                  searchQuery={fileSearch}
                   onSelectFile={(path) => {
                     setViewingDiffId(null);
                     onSelectTab(path);
