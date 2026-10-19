@@ -8,6 +8,7 @@ interface SettingsModalProps {
   settings: AppSettings | null;
   availableModels: ModelInfo[];
   onSave: (updated: Partial<AppSettings>) => Promise<void>;
+  onClearHistory?: () => Promise<void>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -16,6 +17,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   settings,
   availableModels,
   onSave,
+  onClearHistory,
 }) => {
   const [ollamaUrl, setOllamaUrl] = useState('');
   const [model, setModel] = useState('');
@@ -59,22 +61,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 select-none">
-      <div className="bg-navy-900 border border-navy-700/80 rounded-xl shadow-2xl max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden text-slate-100 animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-[#1e1b4b]/40 backdrop-blur-sm flex items-center justify-center p-4 select-none">
+      <div className="bg-white border border-slate-700/60 rounded-2xl shadow-[0_16px_40px_rgba(41,44,121,0.14)] max-w-lg w-full max-h-[90vh] flex flex-col overflow-hidden text-slate-800 animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="px-5 py-3.5 border-b border-navy-800 flex items-center justify-between bg-navy-950 shrink-0">
-          <div className="flex items-center space-x-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-500/10 flex items-center justify-center border border-blue-500/20">
-              <SettingsIcon className="w-4 h-4 text-blue-400" />
+        <div className="px-5 py-4 border-b border-slate-700/40 flex items-center justify-between bg-[#f8f9fd] shrink-0">
+          <div className="flex items-center space-x-3">
+            <div className="w-8 h-8 rounded-full bg-blue-50 flex items-center justify-center border border-blue-200">
+              <SettingsIcon className="w-4 h-4 text-blue-600" />
             </div>
             <div>
-              <h2 className="text-sm font-semibold tracking-tight text-slate-100">ForgeLocal Settings</h2>
+              <h2 className="text-sm font-semibold tracking-tight text-slate-800">My Intelligence Settings</h2>
               <p className="text-[11px] text-slate-400">Configure local model endpoint and safe generation parameters.</p>
             </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg hover:bg-navy-800 text-slate-400 hover:text-white transition"
+            className="p-1.5 rounded-full hover:bg-slate-200/60 text-slate-400 hover:text-slate-700 transition"
           >
             <X className="w-4 h-4" />
           </button>
@@ -84,8 +86,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         <form onSubmit={handleSubmit} className="p-5 space-y-4 text-xs overflow-y-auto flex-1">
           {/* Ollama Base URL */}
           <div>
-            <label className="block font-medium text-slate-200 mb-1 flex items-center space-x-1.5">
-              <Globe className="w-3.5 h-3.5 text-blue-400" />
+            <label className="block font-medium text-slate-700 mb-1 flex items-center space-x-1.5">
+              <Globe className="w-3.5 h-3.5 text-blue-600" />
               <span>Local Ollama API Endpoint:</span>
             </label>
             <input
@@ -93,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               value={ollamaUrl}
               onChange={(e) => setOllamaUrl(e.target.value)}
               placeholder="http://127.0.0.1:11434"
-              className="w-full bg-navy-950 border border-navy-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500/80"
+              className="w-full bg-[#f8f9fd] border border-slate-700/60 rounded-xl px-3 py-2 text-slate-800 font-mono text-xs focus:outline-none focus:border-blue-500"
             />
             <p className="text-[11px] text-slate-400 mt-1">
               Must point to localhost Ollama (127.0.0.1). No cloud credentials or external connections required.
@@ -102,15 +104,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
           {/* Model selection */}
           <div>
-            <label className="block font-medium text-slate-200 mb-1 flex items-center space-x-1.5">
-              <Cpu className="w-3.5 h-3.5 text-blue-400" />
+            <label className="block font-medium text-slate-700 mb-1 flex items-center space-x-1.5">
+              <Cpu className="w-3.5 h-3.5 text-blue-600" />
               <span>Installed Local Model:</span>
             </label>
             <div className="space-y-1.5">
               <select
                 value={model}
                 onChange={(e) => setModel(e.target.value)}
-                className="w-full bg-navy-950 border border-navy-700 rounded-lg px-3 py-2 text-slate-100 font-mono text-xs focus:outline-none focus:border-blue-500/80"
+                className="w-full bg-[#f8f9fd] border border-slate-700/60 rounded-xl px-3 py-2 text-slate-800 font-mono text-xs focus:outline-none focus:border-blue-500"
               >
                 {availableModels.length > 0 ? (
                   availableModels.map((m) => (
@@ -125,11 +127,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
             
             {/* Manual pull instructions */}
-            <div className="mt-2 p-2.5 rounded-lg bg-navy-950 border border-navy-800 text-[11px] text-slate-400 flex items-start space-x-2">
-              <Terminal className="w-3.5 h-3.5 text-slate-500 mt-0.5 shrink-0" />
+            <div className="mt-2 p-2.5 rounded-xl bg-[#f8f9fd] border border-slate-700/60 text-[11px] text-slate-600 flex items-start space-x-2">
+              <Terminal className="w-3.5 h-3.5 text-slate-400 mt-0.5 shrink-0" />
               <div>
                 <span>To install additional models locally, run in your terminal:</span>
-                <code className="block mt-1 font-mono text-blue-400 text-[10px] bg-navy-900 px-2 py-0.5 rounded border border-navy-800">
+                <code className="block mt-1 font-mono text-blue-600 text-[10px] bg-white px-2 py-0.5 rounded border border-slate-700/60 font-semibold">
                   ollama pull qwen2.5-coder:7b
                 </code>
               </div>
@@ -137,17 +139,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
 
           {/* Generation Limits for Apple Silicon */}
-          <div className="pt-2 border-t border-navy-800 space-y-3">
+          <div className="pt-2 border-t border-slate-700/40 space-y-3">
             <span className="text-[10px] uppercase font-semibold text-slate-400 block flex items-center space-x-1">
-              <Sliders className="w-3 h-3 text-blue-400" />
+              <Sliders className="w-3 h-3 text-blue-600" />
               <span>Generation Settings (Optimized for 16 GB Apple Silicon)</span>
             </span>
 
             {/* Temperature Slider */}
             <div>
               <div className="flex justify-between items-center mb-1">
-                <span className="text-slate-300">Temperature (Creativity vs Determinism):</span>
-                <span className="font-mono text-blue-400">{temperature.toFixed(2)}</span>
+                <span className="text-slate-700 font-medium">Temperature (Creativity vs Determinism):</span>
+                <span className="font-mono text-blue-600 font-semibold">{temperature.toFixed(2)}</span>
               </div>
               <input
                 type="range"
@@ -156,9 +158,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 step="0.05"
                 value={temperature}
                 onChange={(e) => setTemperature(parseFloat(e.target.value))}
-                className="w-full accent-blue-500 cursor-pointer"
+                className="w-full accent-blue-600 cursor-pointer"
               />
-              <div className="flex justify-between text-[10px] text-slate-500">
+              <div className="flex justify-between text-[10px] text-slate-400">
                 <span>0.0 (Precise/Code)</span>
                 <span>0.5 (Balanced)</span>
                 <span>1.0 (Creative)</span>
@@ -168,11 +170,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Context Window & Max Tokens */}
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-slate-300 mb-1">Context Length (num_ctx):</label>
+                <label className="block text-slate-700 font-medium mb-1">Context Length (num_ctx):</label>
                 <select
                   value={numCtx}
                   onChange={(e) => setNumCtx(parseInt(e.target.value))}
-                  className="w-full bg-navy-950 border border-navy-700 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none"
+                  className="w-full bg-[#f8f9fd] border border-slate-700/60 rounded-xl px-2.5 py-1.5 text-slate-800 font-mono text-xs focus:outline-none"
                 >
                   <option value={4096}>4,096 tokens</option>
                   <option value={8192}>8,192 tokens (Recommended)</option>
@@ -182,11 +184,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1">Max Predict (num_predict):</label>
+                <label className="block text-slate-700 font-medium mb-1">Max Predict (num_predict):</label>
                 <select
                   value={numPredict}
                   onChange={(e) => setNumPredict(parseInt(e.target.value))}
-                  className="w-full bg-navy-950 border border-navy-700 rounded-lg px-2.5 py-1.5 text-slate-100 font-mono text-xs focus:outline-none"
+                  className="w-full bg-[#f8f9fd] border border-slate-700/60 rounded-xl px-2.5 py-1.5 text-slate-800 font-mono text-xs focus:outline-none"
                 >
                   <option value={1024}>1,024 tokens</option>
                   <option value={2048}>2,048 tokens (Recommended)</option>
@@ -195,36 +197,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
 
-            {/* Request Timeout */}
+            {/* Allowed Commands */}
             <div>
-              <label className="block text-slate-300 mb-1">Inference Timeout (seconds):</label>
-              <input
-                type="number"
-                min={10}
-                max={600}
-                value={requestTimeout}
-                onChange={(e) => setRequestTimeout(Number(e.target.value))}
-                className="w-full bg-navy-950 border border-navy-700 rounded-lg px-3 py-1.5 text-slate-100 font-mono text-xs focus:outline-none"
-              />
-              <p className="text-[10px] text-slate-500 mt-1">
-                Maximum time to wait for a completion before returning a timeout error.
+              <label className="block text-slate-700 font-medium mb-1 flex items-center space-x-1.5">
+                <Terminal className="w-3.5 h-3.5 text-blue-600" />
+                <span>Command Execution Allowlist:</span>
+              </label>
+              <div className="bg-[#f8f9fd] border border-slate-700/60 rounded-xl p-2.5 font-mono text-[11px] text-slate-700">
+                {settings?.allowed_commands?.join(', ') || 'pytest, python, npm, cargo, go'}
+              </div>
+              <p className="text-[10px] text-slate-400 mt-1">
+                Commands outside this allowlist are strictly rejected before execution.
               </p>
             </div>
+
+            {/* Clear All History Section */}
+            {onClearHistory && (
+              <div className="pt-2 border-t border-slate-700/40">
+                <label className="block text-rose-700 mb-1 font-semibold">
+                  Danger Zone: Reset Local History
+                </label>
+                <div className="flex items-center justify-between bg-rose-50 border border-rose-200 p-3 rounded-xl">
+                  <div>
+                    <span className="text-[11px] text-rose-900 block font-medium">Clear All History & Backups</span>
+                    <span className="text-[10px] text-rose-600">Deletes all chat sessions, messages, task plans, and backups.</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      if (confirm('Are you sure you want to permanently delete all history and backups? This cannot be undone.')) {
+                        await onClearHistory();
+                        onClose();
+                      }
+                    }}
+                    className="px-3 py-1.5 rounded-full bg-rose-100 hover:bg-rose-200 text-rose-700 border border-rose-300 text-[11px] font-semibold transition"
+                  >
+                    Clear History
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Modal Footer */}
-          <div className="pt-3 border-t border-navy-800 flex items-center justify-end space-x-2 shrink-0">
+          <div className="pt-3 border-t border-slate-700/40 flex items-center justify-end space-x-2 shrink-0">
             <button
               type="button"
               onClick={onClose}
-              className="px-3 py-1.5 rounded-lg bg-navy-800 hover:bg-navy-750 text-slate-300 transition text-xs font-medium"
+              className="px-4 py-2 rounded-full hover:bg-slate-100 text-slate-600 hover:text-slate-900 transition text-xs font-medium"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving}
-              className="flex items-center space-x-1.5 px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white transition text-xs font-medium shadow-sm disabled:opacity-50"
+              className="flex items-center space-x-1.5 px-5 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white transition text-xs font-medium shadow-[0_2px_8px_rgba(112,102,224,0.3)] disabled:opacity-50"
             >
               <Save className="w-3.5 h-3.5" />
               <span>{saving ? 'Saving...' : 'Save Settings'}</span>

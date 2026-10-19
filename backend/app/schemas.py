@@ -96,7 +96,7 @@ class FileSearchMatch(BaseModel):
 # Approvals (Human-in-the-Loop)
 # -------------------------------------------------------------
 ActionType = Literal["write_file", "patch_file", "delete_file", "run_command"]
-ApprovalStatus = Literal["pending", "approved", "rejected", "executed", "failed"]
+ApprovalStatus = Literal["pending", "approved", "rejected", "executed", "failed", "reverted"]
 
 
 class ApprovalCreate(BaseModel):
@@ -185,6 +185,7 @@ class ChatMessageRequest(BaseModel):
     mode: Optional[Literal["chat", "explain", "refactor", "test", "fix"]] = "chat"
     current_file_path: Optional[str] = None
     selected_code: Optional[str] = None
+    workspace_path: Optional[str] = None
 
 
 # -------------------------------------------------------------
@@ -214,3 +215,54 @@ class AppSettingsUpdate(BaseModel):
     command_timeout_seconds: Optional[int] = None
     max_file_size_bytes: Optional[int] = None
     active_workspace: Optional[str] = None
+
+
+# -------------------------------------------------------------
+# Document Upload, Q&A, and Summaries
+# -------------------------------------------------------------
+class DocumentMetadata(BaseModel):
+    id: str
+    session_id: Optional[str] = None
+    filename: str
+    file_type: str
+    file_size: int
+    status: str
+    page_count: int = 0
+    extracted_char_count: int = 0
+    chunk_count: int = 0
+    extraction_warnings: List[str] = Field(default_factory=list)
+    ocr_used: bool = False
+    created_at: str
+    updated_at: str
+
+
+class DocumentQuestionRequest(BaseModel):
+    question: str
+    document_ids: Optional[List[str]] = None
+    session_id: Optional[str] = None
+    model: Optional[str] = None
+    limit_chunks: int = 6
+
+
+class DocumentQuestionResponse(BaseModel):
+    answer: str
+    citations: List[str] = Field(default_factory=list)
+    chunks_used: int = 0
+
+
+class DocumentSummaryRequest(BaseModel):
+    document_id: str
+    summary_type: Literal[
+        "quick", "detailed", "key_points", "dates_deadlines",
+        "risks_limitations", "action_items", "qa", "section_by_section"
+    ] = "quick"
+    model: Optional[str] = None
+
+
+class DocumentSummaryResponse(BaseModel):
+    document_id: str
+    summary_type: str
+    summary: str
+    cached: bool = False
+    chunks_analyzed: Any = 0
+

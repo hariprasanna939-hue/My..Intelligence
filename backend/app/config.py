@@ -35,13 +35,24 @@ class Settings(BaseSettings):
         self.DATA_DIR.mkdir(parents=True, exist_ok=True)
         return self.DATA_DIR / self.DB_FILENAME
 
+    @property
+    def DOCUMENTS_DIR(self) -> Path:
+        docs_dir = self.DATA_DIR / "documents"
+        docs_dir.mkdir(parents=True, exist_ok=True)
+        return docs_dir
+
     # Default active workspace (if any)
     ACTIVE_WORKSPACE: Optional[str] = None
 
     # Sandbox & Security restrictions
     MAX_FILE_SIZE_BYTES: int = 500_000  # 500 KB limit for reading code files
+    MAX_UPLOAD_FILE_SIZE_BYTES: int = 25_000_000  # 25 MB limit for uploaded documents
     MAX_COMMAND_OUTPUT_BYTES: int = 64_000  # 64 KB output buffer
     COMMAND_TIMEOUT_SECONDS: int = 30  # Maximum execution time for approved commands
+
+    # Document Chunking defaults (configurable per model context)
+    DOCUMENT_CHUNK_SIZE: int = 1000  # Characters per chunk
+    DOCUMENT_CHUNK_OVERLAP: int = 200  # Character overlap between adjacent chunks
 
     # Explicit allowlist of allowed base command binaries
     ALLOWED_COMMANDS: List[str] = [

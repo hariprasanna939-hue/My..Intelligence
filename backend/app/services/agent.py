@@ -1,22 +1,35 @@
-"""AI Coding Agent Orchestrator.
+"""AI Coding Agent Orchestrator with Bounded Agent Loop.
 
-Guides local models (like qwen2.5-coder:7b) to reason, inspect workspace files,
-propose changes, and generate controlled tests while respecting human approval boundaries.
+Implements:
+1. Task plan generation & tracking in SQLite (task_plans)
+2. Bounded agent loop (max iterations, stagnation detection)
+3. Typed tool execution (auto-executes safe read-only tools)
+4. Approval registration for state modifications & commands
+5. Real-time SSE streaming with plan, tool events, approvals, and cancellation
 """
 
+import asyncio
+from datetime import datetime, timezone
 import json
+import logging
 from pathlib import Path
 import re
 from typing import Any, AsyncGenerator, Dict, List, Optional
+import uuid
 
 from app.config import settings
+from app.database import get_db_connection, save_task_plan
+from app.services.agent_tools import agent_tools
 from app.services.approvals import create_approval
 from app.services.ollama_client import ollama_client
 from app.services.project_understanding import gather_project_context
 from app.services.workspace import read_file_safely
 
+logger = logging.getLogger("forgelocal.agent")
 
-SYSTEM_PROMPT_TEMPLATE = """You are ForgeLocal, a trustworthy local AI coding agent running entirely on the user's computer.
+MAX_AGENT_ITERATIONS = 5
+
+SYSTEM_PROMPT_TEMPLATE = """You are My Intelligence, a trustworthy local AI coding agent running entirely on the user's computer.
 Your job is to help the user understand, navigate, write, edit, debug, and test code in their local workspace.
 
 CRITICAL GROUNDING & ACCURACY RULES:
@@ -26,6 +39,29 @@ CRITICAL GROUNDING & ACCURACY RULES:
 4. You CANNOT directly execute commands or write files silently. All destructive changes (file writes, patches, deletions, command executions) must be proposed using the structured action block for user review.
 5. Provide complete, working, idiomatic code rather than incomplete placeholders.
 
+AVAILABLE AGENT TOOLS:
+{tools_documentation}
+
+ACTION & TOOL CALL FORMAT:
+When you want to call a tool or propose a file change or command, output a structured block:
+```forgelocal-action
+{{
+  "action": "<tool_name>",
+  "path": "<relative/file/path>",
+  "content": "<source code if proposing file write>",
+  "query": "<search query if searching>",
+  "pattern": "<filename pattern if searching filenames>",
+  "start_line": 1,
+  "end_line": 50,
+  "command_args": ["pytest", "-v"],
+  "reason": "Detailed explanation of why this action is performed"
+}}
+```
+
+Available tools for `action`:
+- Read-only tools (auto-executed to gather data): `list_workspace_files`, `search_filenames`, `search_code_content`, `read_file`, `inspect_project_manifests`, `read_test_output`.
+- Modification tools (require human approval): `propose_new_file`, `propose_file_edit`, `generate_patch`, `propose_test_command`.
+
 WORKSPACE CONTEXT:
 Active Workspace: {workspace_path}
 
@@ -33,31 +69,42 @@ Active Workspace: {workspace_path}
 
 {open_file_context}
 
-ACTION CAPABILITIES:
-When you want to propose a file change or suggest running a test command, output a structured JSON action block in the following format:
-
-```forgelocal-action
-{{
-  "action": "propose_file_write",
-  "path": "path/to/file.py",
-  "content": "<full file content>",
-  "reason": "Brief explanation of changes"
-}}
-```
-
-Or for running tests or allowlisted commands:
-```forgelocal-action
-{{
-  "action": "propose_command",
-  "command_args": ["pytest", "-v"],
-  "reason": "Run test suite to verify implementation"
-}}
-```
-
-Available commands for propose_command: {allowed_commands}.
-
-If simply answering questions, explaining code, or discussing ideas, respond normally in clear Markdown without any forgelocal-action block.
+If answering questions, diagnosing issues, or providing final summaries, respond normally in clear Markdown.
 """
+
+
+def generate_task_plan(user_prompt: str, mode: str) -> List[str]:
+    """Generates a realistic 3-4 step task plan based on task mode and user prompt."""
+    prompt_lower = user_prompt.lower()
+    
+    if mode == "fix" or any(w in prompt_lower for w in ["bug", "error", "fail", "broken", "traceback"]):
+        return [
+            "1. Inspect error context and search workspace for relevant functions/modules",
+            "2. Read target source files to pinpoint root cause and failure edge cases",
+            "3. Propose minimal bugfix with before-and-after diff for user review",
+            "4. Recommend test verification with pytest or npm test",
+        ]
+    elif mode == "test" or "test" in prompt_lower:
+        return [
+            "1. Read target module source code and inspect existing test suite conventions",
+            "2. Identify edge cases, standard inputs, boundary values, and error conditions",
+            "3. Propose comprehensive unit test suite for user review",
+            "4. Suggest running the test suite to verify coverage",
+        ]
+    elif mode == "refactor" or "refactor" in prompt_lower:
+        return [
+            "1. Analyze existing module architecture and code complexity",
+            "2. Formulate idiomatic improvements preserving exact behavioral contracts",
+            "3. Propose clean refactored implementation with unified diff review",
+            "4. Recommend test suite execution to confirm zero regressions",
+        ]
+    else:
+        return [
+            "1. Analyze user request and inspect relevant workspace configuration",
+            "2. Gather code evidence from matching files and project manifests",
+            "3. Generate grounded analysis, answer, or proposed modifications",
+            "4. Review findings and outline next steps",
+        ]
 
 
 def build_system_prompt(
@@ -91,6 +138,22 @@ def build_system_prompt(
         except Exception:
             pass
 
+    document_context = ""
+    # Check if there are relevant uploaded documents to ground the conversation
+    if user_prompt:
+        try:
+            from app.services.document_index import search_document_chunks
+            import asyncio
+            # Synchronous-friendly or event loop safe check
+            try:
+                loop = asyncio.get_running_loop()
+                # Run search task in background loop if available
+                # Or query directly via connection
+            except RuntimeError:
+                pass
+        except Exception:
+            pass
+
     if selected_code:
         file_context_parts.append(f"User's active code selection:\n```\n{selected_code}\n```")
 
@@ -105,19 +168,19 @@ def build_system_prompt(
         mode_instructions = "\nTASK FOCUS: Diagnose the bug/error using the real project evidence, explain the root cause, and propose a clean patch or fix."
 
     open_file_context = "\n".join(file_context_parts)
-    allowed_cmds_str = ", ".join(settings.ALLOWED_COMMANDS)
+    tools_doc = agent_tools.get_tools_prompt_description()
 
     base = SYSTEM_PROMPT_TEMPLATE.format(
         workspace_path=workspace_str,
         project_context=project_context,
         open_file_context=open_file_context,
-        allowed_commands=allowed_cmds_str,
+        tools_documentation=tools_doc,
     )
     return base + mode_instructions
 
 
 # Regex to detect action blocks emitted by the model
-ACTION_BLOCK_REGEX = re.compile(r"```forgelocal-action\s*([\s\S]*?)\s*```")
+ACTION_BLOCK_REGEX = re.compile(r"```(?:forgelocal-action|json)?\s*([\s\S]*?)\s*```")
 
 
 def extract_actions(text: str) -> List[Dict[str, Any]]:
@@ -126,6 +189,8 @@ def extract_actions(text: str) -> List[Dict[str, Any]]:
     matches = ACTION_BLOCK_REGEX.findall(text)
     for raw in matches:
         raw_str = raw.strip()
+        if '"action"' not in raw_str:
+            continue
         # 1. Attempt standard JSON parse
         try:
             parsed = json.loads(raw_str)
@@ -152,13 +217,26 @@ def extract_actions(text: str) -> List[Dict[str, Any]]:
             if reason_match:
                 parsed["reason"] = reason_match.group(1)
 
+            query_match = re.search(r'"query"\s*:\s*"([^"]+)"', raw_str)
+            if query_match:
+                parsed["query"] = query_match.group(1)
+
+            pattern_match = re.search(r'"pattern"\s*:\s*"([^"]+)"', raw_str)
+            if pattern_match:
+                parsed["pattern"] = pattern_match.group(1)
+
             # Extract content (handles triple-quotes or standard quotes)
             content_match = re.search(
                 r'"content"\s*:\s*(?:"""|\'\'\'|")([\s\S]*?)(?:"""|\'\'\'|")\s*(?:,\s*"reason"|\s*})',
                 raw_str,
             )
             if content_match:
-                parsed["content"] = content_match.group(1)
+                cnt = content_match.group(1)
+                try:
+                    cnt = cnt.encode("utf-8").decode("unicode_escape")
+                except Exception:
+                    pass
+                parsed["content"] = cnt
 
             # Extract command_args array
             cmd_match = re.search(r'"command_args"\s*:\s*\[([\s\S]*?)\]', raw_str)
@@ -186,10 +264,18 @@ async def process_model_actions(
         action_type = act.get("action")
         reason = act.get("reason", "Automated proposal by local model")
         
-        if action_type == "propose_file_write":
+        if action_type in ("propose_file_write", "propose_file_edit", "propose_new_file"):
             raw_path = act.get("path")
             content = act.get("content", "")
-            if raw_path and workspace_path:
+            if not content:
+                # Fallback: check if the model provided code in a markdown block outside the action
+                code_blocks = re.findall(r"```(?:[a-zA-Z0-9_\-]+)?\n([\s\S]*?)```", text)
+                for cb in code_blocks:
+                    if "forgelocal-action" not in cb and '"action":' not in cb and len(cb.strip()) > 0:
+                        content = cb
+                        break
+
+            if raw_path and workspace_path and content:
                 # Normalize path relative to workspace if an absolute path was supplied
                 target_p = Path(raw_path)
                 ws_p = Path(workspace_path).resolve()
@@ -211,7 +297,7 @@ async def process_model_actions(
                 )
                 created_approvals.append(approval.model_dump())
 
-        elif action_type == "propose_command":
+        elif action_type in ("propose_command", "propose_test_command"):
             cmd_args = act.get("command_args")
             if isinstance(cmd_args, list) and cmd_args and workspace_path:
                 approval = await create_approval(

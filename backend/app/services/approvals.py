@@ -186,6 +186,16 @@ async def resolve_approval(
             if approval.action_type in ("write_file", "patch_file"):
                 if not approval.target_path or approval.content is None:
                     raise ValueError("Target path or content missing.")
+                
+                # Check if target already exists and preserve backup before overwriting
+                from app.database import save_file_backup
+                from app.security import resolve_safe_path
+                target_full = resolve_safe_path(workspace_root, approval.target_path)
+                if target_full.exists() and target_full.is_file():
+                    existing_text = target_full.read_text(encoding="utf-8", errors="replace")
+                    backup_id = str(uuid.uuid4())
+                    await save_file_backup(backup_id, approval_id, approval.target_path, existing_text)
+
                 write_file_safely(workspace_root, approval.target_path, approval.content)
                 result_str = f"Successfully wrote file '{approval.target_path}' ({len(approval.content)} chars)."
                 new_status = "executed"
@@ -220,6 +230,54 @@ async def resolve_approval(
             SET status = ?, execution_result = ?, resolved_at = ?
             WHERE id = ?
         """, (new_status, result_str, now_iso, approval_id))
+        await db.commit()
+
+    return await get_approval(approval_id)
+
+
+async def revert_approval(
+    approval_id: str,
+    workspace_root: str,
+) -> ApprovalItem:
+    """Reverts an executed file modification using preserved backup or deletes newly created file."""
+    approval = await get_approval(approval_id)
+    if approval.status != "executed":
+        raise HTTPException(
+            status_code=400,
+            detail=f"Only executed approvals can be reverted. Current status is '{approval.status}'.",
+        )
+    if approval.action_type not in ("write_file", "patch_file"):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Cannot revert non-file action type '{approval.action_type}'.",
+        )
+
+    from app.database import get_file_backup_by_approval
+    backup = await get_file_backup_by_approval(approval_id)
+
+    now_iso = datetime.now(timezone.utc).isoformat()
+    if backup:
+        # Restore previous content
+        write_file_safely(workspace_root, approval.target_path, backup["original_content"])
+        revert_msg = f"Reverted file '{approval.target_path}' to preserved backup version."
+    elif approval.original_content:
+        # Restore original content recorded during creation
+        write_file_safely(workspace_root, approval.target_path, approval.original_content)
+        revert_msg = f"Reverted file '{approval.target_path}' to initial recorded content."
+    else:
+        # File was newly created by the approval, so delete it to revert
+        try:
+            delete_file_safely(workspace_root, approval.target_path)
+            revert_msg = f"Reverted file creation by deleting newly created file '{approval.target_path}'."
+        except Exception as e:
+            revert_msg = f"Revert deletion warning: {str(e)}"
+
+    async with get_db_connection() as db:
+        await db.execute("""
+            UPDATE approvals 
+            SET status = 'reverted', execution_result = ?, resolved_at = ?
+            WHERE id = ?
+        """, (revert_msg, now_iso, approval_id))
         await db.commit()
 
     return await get_approval(approval_id)

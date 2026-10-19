@@ -82,10 +82,43 @@ export interface ApprovalItem {
   diff?: string | null;
   command_args?: string[] | null;
   reason: string;
-  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed';
+  status: 'pending' | 'approved' | 'rejected' | 'executed' | 'failed' | 'reverted';
   execution_result?: string | null;
   created_at: string;
   resolved_at?: string | null;
+}
+
+export interface TaskPlan {
+  id: string;
+  steps: string[];
+  status: 'in_progress' | 'completed' | 'failed';
+  task_description?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ToolActivity {
+  tool: string;
+  args?: any;
+  result?: any;
+  iteration: number;
+  status: 'running' | 'completed' | 'error';
+}
+
+export interface TestExecutionRecord {
+  id: string;
+  session_id?: string | null;
+  command: string;
+  working_dir: string;
+  return_code: number;
+  passed_tests: number;
+  failed_tests: number;
+  skipped_tests: number;
+  stdout: string;
+  stderr: string;
+  execution_time_ms: number;
+  timed_out: boolean;
+  created_at: string;
 }
 
 export interface ChatSession {
@@ -128,3 +161,46 @@ export interface AppSettings {
   max_file_size_bytes: number;
   active_workspace?: string | null;
 }
+
+export type DocumentProcessingStatus =
+  | 'uploaded'
+  | 'validating'
+  | 'extracting'
+  | 'chunking'
+  | 'indexing'
+  | 'ready'
+  | 'error';
+
+export interface DocumentMetadata {
+  id: string;
+  session_id?: string | null;
+  filename: string;
+  file_type: string;
+  file_size: number;
+  status: DocumentProcessingStatus;
+  page_count: number;
+  extracted_char_count: number;
+  chunk_count: number;
+  extraction_warnings: string[];
+  ocr_used: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentQuestionResponse {
+  answer: string;
+  citations: string[];
+  chunks_used: number;
+}
+
+export interface DocumentSummaryResponse {
+  document_id: string;
+  summary_type: string;
+  summary: string;
+  cached: boolean;
+  chunks_analyzed: any;
+}
+
+
+export type AppWorkingMode = 'chat' | 'agent';
+

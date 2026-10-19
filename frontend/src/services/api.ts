@@ -5,10 +5,16 @@ import {
   ChatMessage,
   ChatSession,
   CommandResult,
+  DocumentMetadata,
+  DocumentQuestionResponse,
+  DocumentSummaryResponse,
   FileNode,
   FileReadResponse,
   HealthResponse,
   ProjectSummaryResponse,
+  TaskPlan,
+  TestExecutionRecord,
+  ToolActivity,
 } from '../types';
 
 const API_BASE = '/api';
@@ -150,6 +156,23 @@ export const api = {
     return res.json();
   },
 
+  async revertApproval(id: string): Promise<ApprovalItem> {
+    const res = await fetch(`${API_BASE}/approvals/${encodeURIComponent(id)}/revert`, {
+      method: 'POST',
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Failed to revert approval');
+    }
+    return res.json();
+  },
+
+  async getApprovalBackup(id: string): Promise<any> {
+    const res = await fetch(`${API_BASE}/approvals/${encodeURIComponent(id)}/backup`);
+    if (!res.ok) return null;
+    return res.json();
+  },
+
   // Commands
   async runCommand(command_args: string[]): Promise<CommandResult> {
     const res = await fetch(`${API_BASE}/commands/run`, {
@@ -167,6 +190,18 @@ export const api = {
   async getAllowedCommands(): Promise<string[]> {
     const res = await fetch(`${API_BASE}/commands/allowed`);
     if (!res.ok) throw new Error('Failed to fetch allowed commands');
+    return res.json();
+  },
+
+  async detectTestCommands(): Promise<any[]> {
+    const res = await fetch(`${API_BASE}/commands/detect`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async getTestExecutions(limit = 20): Promise<TestExecutionRecord[]> {
+    const res = await fetch(`${API_BASE}/commands/history?limit=${limit}`);
+    if (!res.ok) return [];
     return res.json();
   },
 
@@ -218,6 +253,20 @@ export const api = {
     return res.json();
   },
 
+  async clearHistory(): Promise<{ status: string; cleared: Record<string, number> }> {
+    const res = await fetch(`${API_BASE}/chat/history`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to clear history');
+    return res.json();
+  },
+
+  async getSessionPlans(sessionId: string): Promise<TaskPlan[]> {
+    const res = await fetch(`${API_BASE}/chat/sessions/${encodeURIComponent(sessionId)}/plans`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
   // SSE Chat Streaming
   async streamChatMessage(
     payload: {
@@ -226,9 +275,14 @@ export const api = {
       mode?: string;
       current_file_path?: string;
       selected_code?: string;
+      workspace_path?: string;
     },
     callbacks: {
       onInit?: (sessionId: string) => void;
+      onPlan?: (plan: TaskPlan) => void;
+      onPlanUpdate?: (plan: { id: string; status: string }) => void;
+      onToolStart?: (tool: { tool: string; args: any; iteration: number }) => void;
+      onToolResult?: (toolResult: { tool: string; result: any; iteration: number }) => void;
       onChunk?: (chunk: string) => void;
       onApprovals?: (approvals: ApprovalItem[]) => void;
       onDone?: (messageId: string, sessionId: string) => void;
@@ -281,6 +335,14 @@ export const api = {
             const parsed = JSON.parse(eventData);
             if (eventType === 'init' && callbacks.onInit) {
               callbacks.onInit(parsed.session_id);
+            } else if (eventType === 'plan' && callbacks.onPlan) {
+              callbacks.onPlan(parsed);
+            } else if (eventType === 'plan_update' && callbacks.onPlanUpdate) {
+              callbacks.onPlanUpdate(parsed);
+            } else if (eventType === 'tool_start' && callbacks.onToolStart) {
+              callbacks.onToolStart(parsed);
+            } else if (eventType === 'tool_result' && callbacks.onToolResult) {
+              callbacks.onToolResult(parsed);
             } else if (eventType === 'chunk' && callbacks.onChunk) {
               callbacks.onChunk(parsed.chunk);
             } else if (eventType === 'approvals' && callbacks.onApprovals) {
@@ -306,5 +368,89 @@ export const api = {
         throw err;
       }
     }
+  },
+
+  // Document Management, Q&A, and Summarization
+  async uploadDocument(file: File, sessionId?: string): Promise<DocumentMetadata> {
+    const formData = new FormData();
+    formData.append('file', file);
+    if (sessionId) {
+      formData.append('session_id', sessionId);
+    }
+
+    const res = await fetch(`${API_BASE}/documents/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Failed to upload document');
+    }
+    return res.json();
+  },
+
+  async listDocuments(sessionId?: string): Promise<DocumentMetadata[]> {
+    const url = sessionId ? `${API_BASE}/documents?session_id=${encodeURIComponent(sessionId)}` : `${API_BASE}/documents`;
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Failed to list documents');
+    return res.json();
+  },
+
+  async getDocument(docId: string): Promise<DocumentMetadata> {
+    const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(docId)}`);
+    if (!res.ok) throw new Error('Failed to get document metadata');
+    return res.json();
+  },
+
+  async deleteDocument(docId: string): Promise<{ status: string }> {
+    const res = await fetch(`${API_BASE}/documents/${encodeURIComponent(docId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) throw new Error('Failed to delete document');
+    return res.json();
+  },
+
+  async askDocumentQuestion(
+    question: string,
+    documentIds?: string[],
+    sessionId?: string,
+    limitChunks = 6
+  ): Promise<DocumentQuestionResponse> {
+    const res = await fetch(`${API_BASE}/documents/qa`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        question,
+        document_ids: documentIds,
+        session_id: sessionId,
+        limit_chunks: limitChunks,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Failed to answer document question');
+    }
+    return res.json();
+  },
+
+  async summarizeDocument(
+    documentId: string,
+    summaryType: string = 'quick',
+    model?: string
+  ): Promise<DocumentSummaryResponse> {
+    const res = await fetch(`${API_BASE}/documents/summarize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        document_id: documentId,
+        summary_type: summaryType,
+        model,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: res.statusText }));
+      throw new Error(err.detail || 'Failed to generate document summary');
+    }
+    return res.json();
   },
 };

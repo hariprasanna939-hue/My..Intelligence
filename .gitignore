@@ -24,3 +24,13 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Local databases & uploads
+backend/forgelocal.db
+backend/data/documents/
+*.db
+*.db-wal
+*.db-shm
+
+# Mac packaging build output
+dist_mac/

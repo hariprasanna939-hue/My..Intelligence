@@ -5,7 +5,9 @@ with timeout enforcement, output byte ceilings, and allowlist validation.
 """
 
 import asyncio
+import os
 from pathlib import Path
+import sys
 import time
 from typing import List, Optional
 from fastapi import HTTPException
@@ -30,6 +32,18 @@ async def execute_command(
     timeout = timeout_seconds or settings.COMMAND_TIMEOUT_SECONDS
     max_output = settings.MAX_COMMAND_OUTPUT_BYTES
 
+    # Build controlled execution environment with venv binaries on PATH
+    env = os.environ.copy()
+    venv_bins = [
+        root_path / ".venv" / "bin",
+        root_path / "venv" / "bin",
+        Path(sys.prefix) / "bin",
+    ]
+    extra_paths = [str(p) for p in venv_bins if p.exists()]
+    if extra_paths:
+        env["PATH"] = ":".join(extra_paths) + ":" + env.get("PATH", "")
+    env["PYTHONPATH"] = str(root_path) + ((":" + env["PYTHONPATH"]) if "PYTHONPATH" in env else "")
+
     start_time = time.perf_counter()
     timed_out = False
     return_code = -1
@@ -42,6 +56,7 @@ async def execute_command(
             binary,
             *args,
             cwd=str(root_path),
+            env=env,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )

@@ -44,7 +44,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
         <FileCode className="w-12 h-12 mb-3 text-zinc-600 opacity-60" />
         <p className="text-sm font-medium text-zinc-400">No file open</p>
         <p className="text-xs text-zinc-600 mt-1">
-          Select a file from the explorer to view, edit, or ask ForgeLocal to review.
+          Select a file from the explorer to view, edit, or ask My Intelligence to review.
         </p>
       </div>
     );

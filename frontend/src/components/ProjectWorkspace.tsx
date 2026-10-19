@@ -90,17 +90,17 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
   if (!activeWorkspace) {
     return (
-      <div className="flex-1 bg-navy-950 flex flex-col items-center justify-center p-6 text-center select-none">
-        <div className="w-12 h-12 rounded-xl bg-navy-900 border border-navy-700 flex items-center justify-center mb-3">
-          <FolderOpen className="w-6 h-6 text-blue-400" />
+      <div className="flex-1 bg-[#f3f5fd] flex flex-col items-center justify-center p-6 text-center select-none">
+        <div className="w-14 h-14 rounded-2xl bg-white border border-slate-700/60 shadow-[0_4px_16px_rgba(41,44,121,0.06)] flex items-center justify-center mb-3">
+          <FolderOpen className="w-7 h-7 text-blue-600" />
         </div>
-        <h3 className="text-sm font-semibold text-slate-200 mb-1">No Project Workspace Open</h3>
-        <p className="text-xs text-slate-400 max-w-sm mb-4">
+        <h3 className="text-sm font-semibold text-slate-800 mb-1">No Project Workspace Open</h3>
+        <p className="text-xs text-slate-500 max-w-sm mb-4">
           Open a local project directory to explore files, edit code, and inspect proposed changes.
         </p>
         <button
           onClick={onOpenWorkspaceModal}
-          className="px-4 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white text-xs font-medium transition shadow-sm"
+          className="px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium transition shadow-[0_2px_8px_rgba(112,102,224,0.3)]"
         >
           Select Project Workspace
         </button>
@@ -109,14 +109,14 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
   }
 
   return (
-    <div className="flex-1 bg-navy-950 flex flex-col h-full overflow-hidden select-none border-l border-navy-800">
+    <div className="flex-1 bg-[#f3f5fd] flex flex-col h-full overflow-hidden select-none border-l border-slate-700/60">
       {/* Workspace Top Bar */}
-      <div className="h-9 bg-navy-900 border-b border-navy-700/80 flex items-center justify-between px-3 shrink-0">
+      <div className="h-10 bg-white border-b border-slate-700/60 flex items-center justify-between px-3 shrink-0">
         <div className="flex items-center space-x-2 truncate">
-          <span className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+          <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
             Workspace:
           </span>
-          <span className="font-mono text-xs text-slate-200 truncate">
+          <span className="font-mono text-xs text-slate-800 font-semibold truncate">
             {activeWorkspace.split('/').pop()}
           </span>
 
@@ -129,10 +129,10 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                   setViewingDiffId(pendingApprovalsWithDiff[0].id);
                 }
               }}
-              className={`flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition border ${
+              className={`flex items-center space-x-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-medium transition border ${
                 viewingDiffId
                   ? 'bg-amber-600 text-white border-amber-500'
-                  : 'bg-amber-950/60 border-amber-600/60 text-amber-300 hover:bg-amber-900/60'
+                  : 'bg-amber-50 border-amber-300 text-amber-700 hover:bg-amber-100'
               }`}
             >
               <GitCompare className="w-3 h-3" />
@@ -173,23 +173,23 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
       <div className="flex-1 flex overflow-hidden">
         {/* Workspace File Explorer */}
         {!explorerCollapsed && (
-          <div className="w-56 md:w-60 bg-navy-900/90 border-r border-navy-700/80 flex flex-col shrink-0">
+          <div className="w-56 md:w-60 bg-white border-r border-slate-700/60 flex flex-col shrink-0">
             {/* Explorer Header */}
-            <div className="p-2 border-b border-navy-800 flex items-center justify-between">
+            <div className="p-2.5 border-b border-slate-700/40 flex items-center justify-between">
               <span className="text-[10px] font-semibold uppercase tracking-wider text-slate-400">
                 Explorer
               </span>
               <div className="flex items-center space-x-1">
                 <button
                   onClick={() => setShowNewFileInput(!showNewFileInput)}
-                  className="p-1 hover:bg-navy-800 rounded text-slate-400 hover:text-slate-200 transition"
+                  className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-800 transition"
                   title="New File"
                 >
                   <Plus className="w-3.5 h-3.5" />
                 </button>
                 <button
                   onClick={onRefreshTree}
-                  className="p-1 hover:bg-navy-800 rounded text-slate-400 hover:text-slate-200 transition"
+                  className="p-1 hover:bg-slate-100 rounded-md text-slate-400 hover:text-slate-800 transition"
                   title="Refresh Files"
                 >
                   <RefreshCw className={`w-3.5 h-3.5 ${loadingTree ? 'animate-spin' : ''}`} />
@@ -198,20 +198,20 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
             </div>
 
             {/* File Filter / Search */}
-            <div className="p-2 border-b border-navy-800">
+            <div className="p-2 border-b border-slate-700/40">
               <div className="relative">
-                <Search className="w-3 h-3 text-slate-500 absolute left-2.5 top-2.5" />
+                <Search className="w-3 h-3 text-slate-400 absolute left-2.5 top-2.5" />
                 <input
                   type="text"
                   value={fileSearch}
                   onChange={(e) => setFileSearch(e.target.value)}
                   placeholder="Search files..."
-                  className="w-full bg-navy-950 border border-navy-800 focus:border-blue-500/80 rounded pl-7 pr-6 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none font-mono"
+                  className="w-full bg-[#f8f9fd] border border-slate-700/60 focus:border-blue-500 rounded-full pl-7 pr-6 py-1 text-xs text-slate-800 placeholder-slate-400 focus:outline-none font-mono"
                 />
                 {fileSearch && (
                   <button
                     onClick={() => setFileSearch('')}
-                    className="absolute right-2 top-2 text-slate-500 hover:text-slate-300"
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-700"
                   >
                     <X className="w-3 h-3" />
                   </button>
@@ -221,13 +221,13 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
 
             {/* Inline New File input */}
             {showNewFileInput && (
-              <form onSubmit={handleCreateSubmit} className="p-2 border-b border-navy-800">
+              <form onSubmit={handleCreateSubmit} className="p-2 border-b border-slate-700/40">
                 <input
                   type="text"
                   value={newFilePath}
                   onChange={(e) => setNewFilePath(e.target.value)}
                   placeholder="e.g. src/utils.py"
-                  className="w-full bg-navy-950 border border-blue-500 rounded px-2 py-1 text-xs text-slate-100 placeholder-slate-500 focus:outline-none font-mono"
+                  className="w-full bg-[#f8f9fd] border border-blue-500 rounded-md px-2 py-1 text-xs text-slate-800 placeholder-slate-400 focus:outline-none font-mono"
                   autoFocus
                 />
               </form>
@@ -247,7 +247,7 @@ export const ProjectWorkspace: React.FC<ProjectWorkspaceProps> = ({
                   onDeleteFile={onDeleteFile}
                 />
               ) : (
-                <div className="text-slate-500 text-xs p-3 text-center">
+                <div className="text-slate-400 text-xs p-3 text-center">
                   Loading files...
                 </div>
               )}

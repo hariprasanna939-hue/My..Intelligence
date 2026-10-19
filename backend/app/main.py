@@ -6,7 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.database import init_db
-from app.routers import approvals, chat, commands, health, settings as settings_router, workspace
+from app.routers import approvals, chat, commands, documents, health, settings as settings_router, workspace
 
 
 @asynccontextmanager
@@ -18,7 +18,7 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(
-    title="ForgeLocal Backend",
+    title="My Intelligence Backend",
     description="Offline AI Coding Agent Backend for local model execution.",
     version="1.0.0",
     lifespan=lifespan,
@@ -46,13 +46,14 @@ app.include_router(workspace.router)
 app.include_router(chat.router)
 app.include_router(approvals.router)
 app.include_router(commands.router)
+app.include_router(documents.router)
 app.include_router(settings_router.router)
 
 
 @app.get("/")
 async def root():
     return {
-        "app": "ForgeLocal",
+        "app": "My Intelligence",
         "mode": "offline",
         "status": "running",
         "docs_url": "/docs",

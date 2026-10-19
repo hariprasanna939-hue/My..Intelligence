@@ -2,20 +2,23 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { api } from './services/api';
 import {
   AppSettings,
+  AppWorkingMode,
   ApprovalItem,
   ChatMessage,
   ChatSession,
   CommandResult,
+  DocumentMetadata,
   FileNode,
   HealthResponse,
   OpenFileTab,
+  TaskPlan,
+  ToolActivity,
 } from './types';
 import { detectLanguage, initMonacoOffline } from './monaco';
 
 import { Header, ViewLayoutMode } from './components/Header';
-import { Sidebar } from './components/Sidebar';
-import { ChatPanel } from './components/ChatPanel';
-import { ProjectWorkspace } from './components/ProjectWorkspace';
+import { ChatModeLayout } from './components/ChatModeLayout';
+import { AgentModeLayout } from './components/AgentModeLayout';
 import { ApprovalModal } from './components/ApprovalModal';
 import { SettingsModal } from './components/SettingsModal';
 import { WorkspaceModal } from './components/WorkspaceModal';
@@ -24,6 +27,29 @@ import { WorkspaceModal } from './components/WorkspaceModal';
 initMonacoOffline();
 
 export const App: React.FC = () => {
+  // Working Mode state ('chat' | 'agent') with localStorage persistence
+  const [appMode, setAppMode] = useState<AppWorkingMode>(() => {
+    try {
+      const saved = localStorage.getItem('forgelocal_app_mode');
+      if (saved === 'chat' || saved === 'agent') return saved;
+    } catch {
+      // ignore
+    }
+    return 'chat';
+  });
+
+  const handleModeChange = (newMode: AppWorkingMode) => {
+    setAppMode(newMode);
+    try {
+      localStorage.setItem('forgelocal_app_mode', newMode);
+    } catch {
+      // ignore
+    }
+  };
+
+  // Shared Unsent Prompt Draft across mode switches
+  const [inputDraft, setInputDraft] = useState('');
+
   // App environment state
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [settings, setSettings] = useState<AppSettings | null>(null);
@@ -48,6 +74,8 @@ export const App: React.FC = () => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [streamingText, setStreamingText] = useState('');
   const [isStreaming, setIsStreaming] = useState(false);
+  const [activePlan, setActivePlan] = useState<TaskPlan | null>(null);
+  const [toolActivities, setToolActivities] = useState<ToolActivity[]>([]);
   const [chatError, setChatError] = useState<string | null>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
 
@@ -60,6 +88,11 @@ export const App: React.FC = () => {
   const [terminalOpen, setTerminalOpen] = useState(false);
   const [commandResult, setCommandResult] = useState<CommandResult | null>(null);
   const [isRunningCommand, setIsRunningCommand] = useState(false);
+
+  // Document Management State
+  const [documents, setDocuments] = useState<DocumentMetadata[]>([]);
+  const [uploadingDocument, setUploadingDocument] = useState(false);
+  const [uploadProgressText, setUploadProgressText] = useState('');
 
   // Modals
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false);
@@ -117,16 +150,77 @@ export const App: React.FC = () => {
     refreshTree();
   }, [refreshTree]);
 
-  // 3. Load Session Messages when activeSessionId changes
+  // 3. Load Session Messages & Attached Documents when activeSessionId changes
+  const refreshDocuments = useCallback(async () => {
+    if (!activeSessionId) {
+      setDocuments([]);
+      return;
+    }
+    try {
+      const docs = await api.listDocuments(activeSessionId);
+      setDocuments(docs);
+    } catch (err) {
+      console.error('Failed to load session documents:', err);
+    }
+  }, [activeSessionId]);
+
   useEffect(() => {
     if (!activeSessionId) {
       setMessages([]);
+      setDocuments([]);
       return;
     }
     api.getSessionMessages(activeSessionId)
       .then(setMessages)
       .catch((err) => console.error('Failed to load session messages:', err));
-  }, [activeSessionId]);
+
+    refreshDocuments();
+  }, [activeSessionId, refreshDocuments]);
+
+  // Document Handlers
+  const handleUploadDocument = async (file: File) => {
+    setUploadingDocument(true);
+    setUploadProgressText(`Uploading and validating ${file.name}...`);
+    try {
+      setUploadProgressText(`Extracting readable text from ${file.name}...`);
+      const newDoc = await api.uploadDocument(file, activeSessionId || undefined);
+      setUploadProgressText(`Indexing chunks with SQLite FTS5...`);
+      await refreshDocuments();
+      setDocuments((prev) => {
+        const filtered = prev.filter((d) => d.id !== newDoc.id);
+        return [newDoc, ...filtered];
+      });
+    } catch (err: any) {
+      alert(`Document processing failed: ${err.message}`);
+    } finally {
+      setUploadingDocument(false);
+      setUploadProgressText('');
+    }
+  };
+
+  const handleDeleteDocument = async (docId: string) => {
+    try {
+      await api.deleteDocument(docId);
+      setDocuments((prev) => prev.filter((d) => d.id !== docId));
+    } catch (err: any) {
+      alert(`Could not delete document: ${err.message}`);
+    }
+  };
+
+  const handleSummarizeDocument = async (docId: string, summaryType: string) => {
+    try {
+      const doc = documents.find((d) => d.id === docId);
+      const docTitle = doc ? doc.filename : 'Document';
+      // Automatically send prompt or request summary
+      const res = await api.summarizeDocument(docId, summaryType);
+      
+      // Inject model response message directly into the chat session
+      const summaryMsgContent = `### Summary of ${docTitle} (${res.summary_type})\n\n${res.summary}`;
+      handleSendMessage(`Summarize document: ${docTitle} (${summaryType})`, 'chat');
+    } catch (err: any) {
+      alert(`Failed to generate summary: ${err.message}`);
+    }
+  };
 
   // 4. File Actions
   const handleSelectFile = async (path: string) => {
@@ -236,6 +330,8 @@ export const App: React.FC = () => {
     setIsStreaming(true);
     setStreamingText('');
     setChatError(null);
+    setActivePlan(null);
+    setToolActivities([]);
 
     let currentSessionId = activeSessionId;
     if (!currentSessionId) {
@@ -255,16 +351,39 @@ export const App: React.FC = () => {
     };
     setMessages((prev) => [...prev, tempUserMsg]);
 
+    const isChatMode = appMode === 'chat';
     try {
       await api.streamChatMessage(
         {
           content,
           session_id: currentSessionId,
-          mode,
-          current_file_path: activeTabPath,
-          selected_code: selectedCode || undefined,
+          mode: isChatMode ? 'chat' : mode,
+          current_file_path: isChatMode ? undefined : activeTabPath,
+          selected_code: isChatMode ? undefined : (selectedCode || undefined),
+          workspace_path: isChatMode ? undefined : (activeWorkspace || undefined),
         },
         {
+          onPlan: (plan) => {
+            setActivePlan(plan);
+          },
+          onPlanUpdate: (planUp) => {
+            setActivePlan((prev) => (prev ? { ...prev, status: planUp.status as any } : null));
+          },
+          onToolStart: (tool) => {
+            setToolActivities((prev) => [
+              ...prev,
+              { tool: tool.tool, args: tool.args, iteration: tool.iteration, status: 'running' },
+            ]);
+          },
+          onToolResult: (toolRes) => {
+            setToolActivities((prev) =>
+              prev.map((t) =>
+                t.tool === toolRes.tool && t.iteration === toolRes.iteration
+                  ? { ...t, result: toolRes.result, status: 'completed' }
+                  : t
+              )
+            );
+          },
           onChunk: (chunk) => {
             setStreamingText((prev) => prev + chunk);
           },
@@ -296,6 +415,34 @@ export const App: React.FC = () => {
         setStreamingText('');
         setChatError(err.message || 'Chat generation failed');
       }
+    }
+  };
+
+  const handleRevertApproval = async (approvalId: string) => {
+    try {
+      await api.revertApproval(approvalId);
+      const apprvs = await api.listApprovals();
+      setApprovals(apprvs);
+      await refreshTree();
+      if (activeTabPath) {
+        handleSelectFile(activeTabPath);
+      }
+    } catch (err: any) {
+      alert(`Revert failed: ${err.message}`);
+    }
+  };
+
+  const handleClearHistory = async () => {
+    try {
+      await api.clearHistory();
+      setSessions([]);
+      setActiveSessionId(null);
+      setMessages([]);
+      setApprovals([]);
+      setActivePlan(null);
+      setToolActivities([]);
+    } catch (err: any) {
+      alert(`Clear history failed: ${err.message}`);
     }
   };
 
@@ -418,9 +565,11 @@ export const App: React.FC = () => {
   const currentSession = sessions.find((s) => s.id === activeSessionId);
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-navy-950 text-slate-100 font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-reference-gradient text-[#1e1b4b] font-sans">
       {/* Top Application Header */}
       <Header
+        appMode={appMode}
+        onChangeAppMode={handleModeChange}
         health={health}
         activeWorkspace={activeWorkspace}
         activeConversationTitle={currentSession?.title}
@@ -444,143 +593,101 @@ export const App: React.FC = () => {
         onToggleMobileDrawer={() => setMobileDrawerOpen(!mobileDrawerOpen)}
       />
 
-      {/* Main App Container */}
-      <div className="flex flex-1 overflow-hidden relative">
-        {/* Desktop Sidebar */}
-        <div className="hidden md:flex shrink-0">
-          <Sidebar
-            collapsed={sidebarCollapsed}
-            sessions={sessions}
-            activeSessionId={activeSessionId}
-            onSelectSession={setActiveSessionId}
-            onNewSession={handleNewSession}
-            onDeleteSession={handleDeleteSession}
-            activeWorkspace={activeWorkspace}
-            recentWorkspaces={recentWorkspaces}
-            onOpenWorkspaceModal={() => setWorkspaceModalOpen(true)}
-            onSelectWorkspace={handleSelectWorkspace}
-            health={health}
-            onOpenSettings={() => setSettingsModalOpen(true)}
-            pendingApprovalsCount={pendingApprovalsCount}
-            onOpenApprovals={() => {
-              const firstPending = approvals.find((a) => a.status === 'pending') || approvals[0];
-              if (firstPending) setSelectedApproval(firstPending);
-            }}
-          />
-        </div>
-
-        {/* Mobile Drawer Overlay */}
-        {mobileDrawerOpen && (
-          <div
-            className="fixed inset-0 z-40 bg-black/70 backdrop-blur-sm md:hidden flex"
-            onClick={() => setMobileDrawerOpen(false)}
-          >
-            <div
-              className="w-72 bg-navy-900 h-full shadow-2xl"
-              onClick={(e) => e.stopPropagation()}
-            >
-              <Sidebar
-                collapsed={false}
-                sessions={sessions}
-                activeSessionId={activeSessionId}
-                onSelectSession={(id) => {
-                  setActiveSessionId(id);
-                  setMobileDrawerOpen(false);
-                }}
-                onNewSession={() => {
-                  handleNewSession();
-                  setMobileDrawerOpen(false);
-                }}
-                onDeleteSession={handleDeleteSession}
-                activeWorkspace={activeWorkspace}
-                recentWorkspaces={recentWorkspaces}
-                onOpenWorkspaceModal={() => {
-                  setWorkspaceModalOpen(true);
-                  setMobileDrawerOpen(false);
-                }}
-                onSelectWorkspace={(p) => {
-                  handleSelectWorkspace(p);
-                  setMobileDrawerOpen(false);
-                }}
-                health={health}
-                onOpenSettings={() => {
-                  setSettingsModalOpen(true);
-                  setMobileDrawerOpen(false);
-                }}
-                pendingApprovalsCount={pendingApprovalsCount}
-                onOpenApprovals={() => {
-                  const firstPending = approvals.find((a) => a.status === 'pending') || approvals[0];
-                  if (firstPending) setSelectedApproval(firstPending);
-                  setMobileDrawerOpen(false);
-                }}
-              />
-            </div>
-          </div>
-        )}
-
-        {/* Content Area according to LayoutMode */}
-        <div className="flex-1 flex overflow-hidden">
-          {/* Main Chat Area */}
-          {(layoutMode === 'split' || layoutMode === 'chat-only') && (
-            <div
-              className={`flex flex-col overflow-hidden ${
-                layoutMode === 'split' ? 'w-full md:w-1/2 lg:w-[48%] border-r border-navy-800' : 'w-full'
-              }`}
-            >
-              <ChatPanel
-                messages={messages}
-                streamingText={streamingText}
-                isStreaming={isStreaming}
-                onSendMessage={handleSendMessage}
-                onStopGeneration={handleStopGeneration}
-                onRetryMessage={handleRetryMessage}
-                onContinueMessage={handleContinueMessage}
-                activeFilePath={activeTabPath}
-                activeWorkspace={activeWorkspace}
-                hasSelectedCode={!!selectedCode.trim()}
-                onOpenApprovalModal={(apprv) => setSelectedApproval(apprv)}
-                approvals={approvals}
-                onOpenWorkspaceModal={() => setWorkspaceModalOpen(true)}
-                error={chatError}
-                onClearError={() => setChatError(null)}
-              />
-            </div>
-          )}
-
-          {/* Project Workspace (Editor, Files, Diff, Terminal) */}
-          {(layoutMode === 'split' || layoutMode === 'code-only') && (
-            <div
-              className={`flex flex-col overflow-hidden ${
-                layoutMode === 'split' ? 'hidden md:flex flex-1' : 'w-full'
-              }`}
-            >
-              <ProjectWorkspace
-                activeWorkspace={activeWorkspace}
-                tree={tree}
-                loadingTree={loadingTree}
-                onRefreshTree={refreshTree}
-                onCreateFile={handleCreateFile}
-                onDeleteFile={handleDeleteFile}
-                tabs={tabs}
-                activeTabPath={activeTabPath}
-                onSelectTab={handleSelectFile}
-                onCloseTab={handleCloseTab}
-                onChangeContent={handleChangeContent}
-                onSaveFile={handleSaveFile}
-                onSelectionChange={setSelectedCode}
-                approvals={approvals}
-                onOpenApprovalModal={(apprv) => setSelectedApproval(apprv)}
-                terminalOpen={terminalOpen}
-                onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
-                onRunCommand={handleRunCommand}
-                commandResult={commandResult}
-                isRunningCommand={isRunningCommand}
-                onOpenWorkspaceModal={() => setWorkspaceModalOpen(true)}
-              />
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Main Workspace Body according to appMode */}
+      {appMode === 'chat' ? (
+        <ChatModeLayout
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={setActiveSessionId}
+          onNewSession={handleNewSession}
+          onDeleteSession={handleDeleteSession}
+          messages={messages}
+          streamingText={streamingText}
+          isStreaming={isStreaming}
+          onSendMessage={handleSendMessage}
+          onStopGeneration={handleStopGeneration}
+          onRetryMessage={handleRetryMessage}
+          onContinueMessage={handleContinueMessage}
+          inputDraft={inputDraft}
+          onChangeInputDraft={setInputDraft}
+          health={health}
+          error={chatError}
+          onClearError={() => setChatError(null)}
+          documents={documents}
+          onUploadDocument={handleUploadDocument}
+          onDeleteDocument={handleDeleteDocument}
+          onSummarizeDocument={handleSummarizeDocument}
+          uploadingDocument={uploadingDocument}
+          uploadProgressText={uploadProgressText}
+        />
+      ) : (
+        <AgentModeLayout
+          sidebarCollapsed={sidebarCollapsed}
+          sessions={sessions}
+          activeSessionId={activeSessionId}
+          onSelectSession={setActiveSessionId}
+          onNewSession={handleNewSession}
+          onDeleteSession={handleDeleteSession}
+          activeWorkspace={activeWorkspace}
+          recentWorkspaces={recentWorkspaces}
+          onOpenWorkspaceModal={() => setWorkspaceModalOpen(true)}
+          onSelectWorkspace={handleSelectWorkspace}
+          health={health}
+          onOpenSettings={() => setSettingsModalOpen(true)}
+          pendingApprovalsCount={pendingApprovalsCount}
+          onOpenApprovals={() => {
+            const firstPending = approvals.find((a) => a.status === 'pending') || approvals[0];
+            if (firstPending) {
+              setSelectedApproval(firstPending);
+            } else {
+              alert('No pending approvals at this time.');
+            }
+          }}
+          messages={messages}
+          streamingText={streamingText}
+          isStreaming={isStreaming}
+          onSendMessage={handleSendMessage}
+          onStopGeneration={handleStopGeneration}
+          onRetryMessage={handleRetryMessage}
+          onContinueMessage={handleContinueMessage}
+          activeTabPath={activeTabPath}
+          selectedCode={selectedCode}
+          approvals={approvals}
+          onOpenApprovalModal={(apprv) => setSelectedApproval(apprv)}
+          chatError={chatError}
+          onClearError={() => setChatError(null)}
+          activePlan={activePlan}
+          toolActivities={toolActivities}
+          onRevertApproval={handleRevertApproval}
+          inputDraft={inputDraft}
+          onChangeInputDraft={setInputDraft}
+          tree={tree}
+          loadingTree={loadingTree}
+          onRefreshTree={refreshTree}
+          onCreateFile={handleCreateFile}
+          onDeleteFile={handleDeleteFile}
+          tabs={tabs}
+          onSelectTab={handleSelectFile}
+          onCloseTab={handleCloseTab}
+          onChangeContent={handleChangeContent}
+          onSaveFile={handleSaveFile}
+          onSelectionChange={setSelectedCode}
+          terminalOpen={terminalOpen}
+          onToggleTerminal={() => setTerminalOpen(!terminalOpen)}
+          onRunCommand={handleRunCommand}
+          commandResult={commandResult}
+          isRunningCommand={isRunningCommand}
+          layoutMode={layoutMode}
+          mobileDrawerOpen={mobileDrawerOpen}
+          onCloseMobileDrawer={() => setMobileDrawerOpen(false)}
+          documents={documents}
+          onUploadDocument={handleUploadDocument}
+          onDeleteDocument={handleDeleteDocument}
+          onSummarizeDocument={handleSummarizeDocument}
+          uploadingDocument={uploadingDocument}
+          uploadProgressText={uploadProgressText}
+        />
+      )}
 
       {/* Modals & Dialogs */}
       <ApprovalModal
@@ -597,6 +704,7 @@ export const App: React.FC = () => {
         settings={settings}
         availableModels={health?.available_models || []}
         onSave={handleSaveSettings}
+        onClearHistory={handleClearHistory}
       />
 
       <WorkspaceModal
