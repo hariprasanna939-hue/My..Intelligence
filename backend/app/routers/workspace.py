@@ -1,5 +1,4 @@
-"""Workspace filesystem operations router."""
-
+import json
 from pathlib import Path
 from typing import Dict, List, Optional
 from fastapi import APIRouter, HTTPException, Query
@@ -49,16 +48,41 @@ async def get_active_workspace():
     return {"active_workspace": workspace}
 
 
+@router.get("/recent", response_model=List[str])
+async def get_recent_workspaces():
+    """Returns the list of recently opened project paths."""
+    raw = await get_setting("recent_workspaces", "[]")
+    try:
+        return json.loads(raw or "[]")
+    except Exception:
+        return []
+
+
 @router.post("")
 async def set_active_workspace(req: SetWorkspaceRequest):
-    """Sets and validates the active workspace directory path."""
+    """Sets and validates the active workspace directory path, saving to recent history."""
     resolved_dir = validate_workspace_directory(req.workspace_path)
     workspace_str = str(resolved_dir)
     await set_setting("active_workspace", workspace_str)
     settings.ACTIVE_WORKSPACE = workspace_str
+
+    # Update recent workspaces list
+    raw = await get_setting("recent_workspaces", "[]")
+    try:
+        recents: List[str] = json.loads(raw or "[]")
+    except Exception:
+        recents = []
+    
+    if workspace_str in recents:
+        recents.remove(workspace_str)
+    recents.insert(0, workspace_str)
+    recents = recents[:10]  # keep top 10
+    await set_setting("recent_workspaces", json.dumps(recents))
+
     return {
         "status": "success",
         "active_workspace": workspace_str,
+        "recent_workspaces": recents,
     }
 
 

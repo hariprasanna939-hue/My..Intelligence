@@ -26,7 +26,13 @@ export const api = {
     return res.json();
   },
 
-  async setWorkspace(workspace_path: string): Promise<{ status: string; active_workspace: string }> {
+  async getRecentWorkspaces(): Promise<string[]> {
+    const res = await fetch(`${API_BASE}/workspace/recent`);
+    if (!res.ok) return [];
+    return res.json();
+  },
+
+  async setWorkspace(workspace_path: string): Promise<{ status: string; active_workspace: string; recent_workspaces?: string[] }> {
     const res = await fetch(`${API_BASE}/workspace`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -191,63 +197,77 @@ export const api = {
       onApprovals?: (approvals: ApprovalItem[]) => void;
       onDone?: (messageId: string, sessionId: string) => void;
       onError?: (error: string) => void;
-    }
+    },
+    signal?: AbortSignal
   ): Promise<void> {
-    const response = await fetch(`${API_BASE}/chat/stream`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
+    try {
+      const response = await fetch(`${API_BASE}/chat/stream`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal,
+      });
 
-    if (!response.ok) {
-      const err = await response.json().catch(() => ({ detail: response.statusText }));
-      throw new Error(err.detail || 'Streaming failed');
-    }
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({ detail: response.statusText }));
+        throw new Error(err.detail || 'Streaming failed');
+      }
 
-    const reader = response.body?.getReader();
-    if (!reader) throw new Error('Response body has no reader');
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('Response body has no reader');
 
-    const decoder = new TextDecoder('utf-8');
-    let buffer = '';
+      const decoder = new TextDecoder('utf-8');
+      let buffer = '';
 
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
 
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split('\n\n');
-      buffer = events.pop() || '';
+        buffer += decoder.decode(value, { stream: true });
+        const events = buffer.split('\n\n');
+        buffer = events.pop() || '';
 
-      for (const eventStr of events) {
-        if (!eventStr.trim()) continue;
-        const lines = eventStr.split('\n');
-        let eventType = 'message';
-        let eventData = '';
+        for (const eventStr of events) {
+          if (!eventStr.trim()) continue;
+          const lines = eventStr.split('\n');
+          let eventType = 'message';
+          let eventData = '';
 
-        for (const line of lines) {
-          if (line.startsWith('event: ')) {
-            eventType = line.slice(7).trim();
-          } else if (line.startsWith('data: ')) {
-            eventData = line.slice(6).trim();
+          for (const line of lines) {
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              eventData = line.slice(6).trim();
+            }
+          }
+
+          try {
+            const parsed = JSON.parse(eventData);
+            if (eventType === 'init' && callbacks.onInit) {
+              callbacks.onInit(parsed.session_id);
+            } else if (eventType === 'chunk' && callbacks.onChunk) {
+              callbacks.onChunk(parsed.chunk);
+            } else if (eventType === 'approvals' && callbacks.onApprovals) {
+              callbacks.onApprovals(parsed.approvals);
+            } else if (eventType === 'done' && callbacks.onDone) {
+              callbacks.onDone(parsed.message_id, parsed.session_id);
+            } else if (eventType === 'error' && callbacks.onError) {
+              callbacks.onError(parsed.error);
+            }
+          } catch (e) {
+            console.error('Failed to parse SSE line:', eventData, e);
           }
         }
-
-        try {
-          const parsed = JSON.parse(eventData);
-          if (eventType === 'init' && callbacks.onInit) {
-            callbacks.onInit(parsed.session_id);
-          } else if (eventType === 'chunk' && callbacks.onChunk) {
-            callbacks.onChunk(parsed.chunk);
-          } else if (eventType === 'approvals' && callbacks.onApprovals) {
-            callbacks.onApprovals(parsed.approvals);
-          } else if (eventType === 'done' && callbacks.onDone) {
-            callbacks.onDone(parsed.message_id, parsed.session_id);
-          } else if (eventType === 'error' && callbacks.onError) {
-            callbacks.onError(parsed.error);
-          }
-        } catch (e) {
-          console.error('Failed to parse SSE line:', eventData, e);
-        }
+      }
+    } catch (err: any) {
+      if (err.name === 'AbortError') {
+        // User deliberately stopped generation
+        return;
+      }
+      if (callbacks.onError) {
+        callbacks.onError(err.message || 'Streaming failed');
+      } else {
+        throw err;
       }
     }
   },

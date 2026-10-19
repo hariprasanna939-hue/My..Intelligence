@@ -8,23 +8,36 @@ export default {
   theme: {
     extend: {
       colors: {
+        navy: {
+          950: '#0b0f19', // deep canvas
+          900: '#0f172a', // base surfaces
+          850: '#131d33', // elevated panels / sidebars
+          800: '#1e293b', // component surfaces / cards
+          750: '#25334a', // hover states
+          700: '#334155', // borders
+          600: '#475569', // muted borders
+        },
         editor: {
-          bg: '#18181b', // zinc-900
-          sidebar: '#121214',
-          header: '#0f0f11',
-          panel: '#202024',
-          active: '#27272a',
-          border: '#2e2e34',
-          text: '#e4e4e7',
-          muted: '#a1a1aa',
+          bg: '#0b0f19',
+          sidebar: '#0f172a',
+          header: '#0b0f19',
+          panel: '#131d33',
+          card: '#16223b',
+          active: '#1e293b',
+          border: '#1e293b',
+          borderLight: '#334155',
+          text: '#f1f5f9',
+          muted: '#94a3b8',
           accent: '#3b82f6',
+          violet: '#6366f1',
           success: '#10b981',
           warning: '#f59e0b',
           danger: '#ef4444',
         }
       },
       fontFamily: {
-        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'monospace'],
+        sans: ['-apple-system', 'BlinkMacSystemFont', '"SF Pro Text"', '"SF Pro Display"', 'Segoe UI', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+        mono: ['ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', '"Liberation Mono"', 'monospace'],
       }
     },
   },

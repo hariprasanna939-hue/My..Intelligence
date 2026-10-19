@@ -7,15 +7,20 @@
     box-sizing: border-box;
   }
 
-  body {
+  html, body {
     margin: 0;
     padding: 0;
+    height: 100%;
+    width: 100%;
     overflow: hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    user-select: none;
+    background-color: #0b0f19;
+    color: #f1f5f9;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
-  /* Custom dark scrollbar for sleek desktop feel */
+  /* Sleek developer dark scrollbar */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -26,15 +31,37 @@
   }
 
   ::-webkit-scrollbar-thumb {
-    background: #3f3f46;
-    border-radius: 3px;
+    background: #1e293b;
+    border-radius: 4px;
   }
 
   ::-webkit-scrollbar-thumb:hover {
-    background: #52525b;
+    background: #334155;
   }
 }
 
-.monaco-editor, .monaco-editor-background {
-  background-color: #18181b !important;
+/* Monaco Editor Background Overrides for Deep Navy Theme */
+.monaco-editor,
+.monaco-editor .margin,
+.monaco-editor-background {
+  background-color: #0b0f19 !important;
+}
+
+.monaco-editor .view-overlays .current-line {
+  background-color: rgba(30, 41, 59, 0.4) !important;
+  border: none !important;
+}
+
+.monaco-editor .selected-text {
+  background-color: rgba(59, 130, 246, 0.25) !important;
+}
+
+/* Subtle pulse animation for active generation */
+@keyframes subtle-glow {
+  0%, 100% { opacity: 0.8; }
+  50% { opacity: 1; }
+}
+
+.animate-glow {
+  animation: subtle-glow 2s infinite ease-in-out;
 }
